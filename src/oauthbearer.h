@@ -28,6 +28,7 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdbool.h>
 #include <rhonabwy.h>
 
 #define MAYBE_COMPRESS 1
@@ -63,6 +64,7 @@ typedef struct {
 	const char *trusted_iss;
 	char *trusted_jwks_str;
 	jwks_t *jwks;
+	bool tls_required;
 } oauth_glob_context_t;
 
 typedef struct {

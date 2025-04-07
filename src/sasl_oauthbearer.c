@@ -32,6 +32,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <string.h>
@@ -385,7 +386,7 @@ static int oauth_server_mech_step(
 	sasl_out_params_t *oparams
 ) {
 	oauth_serv_context_t *ctx = (oauth_serv_context_t *)conn_context;
-	// oauth_glob_context_t *gctx;
+	oauth_glob_context_t *gctx;
 	char *authzid = NULL;
 	const char *authcid = NULL;
 	char *auth_msg = NULL;
@@ -411,7 +412,8 @@ static int oauth_server_mech_step(
 		params->utils->seterror(params->utils->conn, 0, "could not get SASL_SSF_EXTERNAL");
 		return SASL_BADPARAM;
 	}
-	if (!((ssfp ? *ssfp : 0) >= 256)) {
+	gctx = ctx->glob_context;
+	if (gctx->tls_required && !((ssfp ? *ssfp : 0) >= 256)) {
 		params->utils->seterror(params->utils->conn, 0, "TLS required!");
 		return SASL_ENCRYPT;
 	}
@@ -600,6 +602,7 @@ int sasl_server_plug_init(
 	oauth_glob_context_t *gctx;
 	int r;
 	const char *val;
+	const char *no_tls;
 	const char *grace;
 	char propname[1024];
 	int propnum = 0;
@@ -647,6 +650,17 @@ int sasl_server_plug_init(
 		gctx->grace = (time_t)3;
 	else
 		gctx->grace = atoi(grace);
+
+
+	/*
+	 * Ignore SSF / TLS check
+	 */
+	r = utils->getopt(utils->getopt_context, "OAUTHBEARER", "oauthbearer_no_tls", &no_tls, NULL);
+	if ((r != 0) || (no_tls == NULL) || (*no_tls == '\0') || atoi(no_tls) != 1) {
+		gctx->tls_required = true;
+	} else {
+		gctx->tls_required = false;
+	}
 
 	/*
 	 * Load the trusted audiences
@@ -1027,7 +1041,8 @@ static void oauth_client_mech_dispose(
 static sasl_client_plug_t oauth_client_plugin = {
 	"OAUTHBEARER", /* mech_name */
 	0, /* max_ssf */
-	SASL_SEC_NOANONYMOUS, /* security_flags */
+	// setting SASL_SEC_NOPLAINTEXT allows non-TLS connections. We check TLS encryption in oauth_server_mech_step() based on configuration.
+	SASL_SEC_NOPLAINTEXT | SASL_SEC_NOANONYMOUS, /* security_flags */
 	SASL_FEAT_WANT_CLIENT_FIRST | SASL_FEAT_ALLOWS_PROXY, /* features */
 	NULL, /* required_prompts */
 	NULL, /* glob_context */

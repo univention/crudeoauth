@@ -32,6 +32,7 @@
 #include "config.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
@@ -430,6 +431,7 @@ int main() {
 	gctx->uid_attr = "uid";
 	gctx->trusted_iss = "https://ucs-sso-ng.school.dev/realms/ucs";
 	gctx->trusted_jwks_str = (char *)test_jwks_str;
+	gctx->tls_required = true;
 
 	trusted_aud.name = "ldaps://school.dev/";
 	SLIST_INIT(&gctx->trusted_aud);

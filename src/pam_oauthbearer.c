@@ -32,6 +32,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdarg.h>
 #include <unistd.h>
@@ -197,6 +198,7 @@ static oauth_glob_context_t * pam_global_context_init(
 	SLIST_INIT(&gctx->trusted_azp);
 	SLIST_INIT(&gctx->required_scope);
 	gctx->grace = (time_t)3;
+	gctx->tls_required = true;
 
 	/*
 	 * Get options
