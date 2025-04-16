@@ -788,21 +788,41 @@ int sasl_server_plug_init(
 			continue;
 		}
 
-		if ((gctx->trusted_jwks_str = utils->malloc(JWKS_BUFFSIZE)) == NULL) {
-			utils->log(NULL, SASL_LOG_ERR, "cannot allocate memory");
-			return SASL_NOMEM;
-		}
-
-		jwks_fp = fopen(jwks_filename, "r");
-		if (jwks_fp == NULL) {
+		FILE *jwks_fp = fopen(jwks_filename, "r");
+		if (!jwks_fp) {
 			utils->log(NULL, SASL_LOG_ERR, "Failed to open JWKS file \"%s\" (%s)", jwks_filename, strerror(errno));
 			return SASL_CONFIGERR;
 		}
-		if (NULL == fgets(gctx->trusted_jwks_str, JWKS_BUFFSIZE, jwks_fp)) {
+
+		if (fseek(jwks_fp, 0, SEEK_END) != 0) {
+			utils->log(NULL, SASL_LOG_ERR, "Failed to seek JWKS file \"%s\" (%s)", jwks_filename, strerror(errno));
 			fclose(jwks_fp);
-			utils->log(NULL, SASL_LOG_ERR, "Failed to load JWKS from \"%s\"", jwks_filename);
 			return SASL_CONFIGERR;
 		}
+
+		long fsize = ftell(jwks_fp);
+		if (fsize < 0) {
+			utils->log(NULL, SASL_LOG_ERR, "Failed to determine JWKS size \"%s\" (%s)", jwks_filename, strerror(errno));
+			fclose(jwks_fp);
+			return SASL_CONFIGERR;
+		}
+
+		rewind(jwks_fp);
+
+		gctx->trusted_jwks_str = utils->malloc(fsize + 1);
+		if (!gctx->trusted_jwks_str) {
+			utils->log(NULL, SASL_LOG_ERR, "Out of memory reading JWKS \"%s\" (%s)", jwks_filename, strerror(errno));
+			fclose(jwks_fp);
+			return SASL_NOMEM;
+		}
+
+		if (fread(gctx->trusted_jwks_str, 1, fsize, jwks_fp) != (size_t)fsize) {
+			utils->log(NULL, SASL_LOG_ERR, "Failed to read full JWKS \"%s\" (%s)", jwks_filename, strerror(errno));
+			fclose(jwks_fp);
+			return SASL_CONFIGERR;
+		}
+
+		gctx->trusted_jwks_str[fsize] = '\0';
 		fclose(jwks_fp);
 
 		if (!gctx->trusted_jwks_str) {

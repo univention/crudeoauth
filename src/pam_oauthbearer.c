@@ -309,19 +309,41 @@ static oauth_glob_context_t * pam_global_context_init(
 				continue;
 			}
 
-			if ((gctx->trusted_jwks_str = malloc(JWKS_BUFFSIZE)) == NULL) {
-				error = PAM_SYSTEM_ERR;
-				syslog(LOG_ERR, "malloc() failed: %s", strerror(errno));
+			FILE *jwks_fp = fopen(data, "r");
+			if (!jwks_fp) {
+				syslog(LOG_ERR, "Failed to open JWKS");
 				goto cleanup;
 			}
 
-			FILE *jwks_fp;
-			jwks_fp = fopen(data, "r");
-			if (NULL == fgets(gctx->trusted_jwks_str, JWKS_BUFFSIZE, jwks_fp)) {
+			if (fseek(jwks_fp, 0, SEEK_END) != 0) {
+				syslog(LOG_ERR, "Failed to seek JWKS");
 				fclose(jwks_fp);
-				syslog(LOG_ERR, "Failed to read JWKS");
 				goto cleanup;
 			}
+
+			long fsize = ftell(jwks_fp);
+			if (fsize < 0) {
+				syslog(LOG_ERR, "Failed to determine JWKS size");
+				fclose(jwks_fp);
+				goto cleanup;
+			}
+
+			rewind(jwks_fp);
+
+			gctx->trusted_jwks_str = malloc(fsize + 1);
+			if (!gctx->trusted_jwks_str) {
+				syslog(LOG_ERR, "Out of memory reading JWKS");
+				fclose(jwks_fp);
+				goto cleanup;
+			}
+
+			if (fread(gctx->trusted_jwks_str, 1, fsize, jwks_fp) != (size_t)fsize) {
+				syslog(LOG_ERR, "Failed to read full JWKS");
+				fclose(jwks_fp);
+				goto cleanup;
+			}
+
+			gctx->trusted_jwks_str[fsize] = '\0';
 			fclose(jwks_fp);
 
 			if (!gctx->trusted_jwks_str) {

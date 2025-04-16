@@ -323,7 +323,7 @@ jwks_t * oauth_get_jwks(
 		/*
 		int rc;
 		unsigned char *output;
-		size_t output_len = JWKS_BUFFSIZE;
+		size_t output_len = 4096 * 4;
 
 		output = malloc(output_len);
 		rc = r_jwk_export_to_pem_der(jwk, R_FORMAT_PEM, output, &output_len, 0);

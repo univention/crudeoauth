@@ -53,8 +53,6 @@ struct oauth_list {
 	SLIST_ENTRY(oauth_list) next;
 };
 
-static const int JWKS_BUFFSIZE = 4096 * 2;
-
 typedef struct {
 	const char *uid_attr;
 	time_t grace;

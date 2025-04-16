@@ -2,6 +2,7 @@ crudeoauth (1.0.0-3) unstable; urgency=medium
 
   * Bug #58210: add configration option to ignore non TLS based
     connections
+  * Bug #57508: read full JWKS
 
  -- Florian Best <best@univention.de>  Wed, 16 Apr 2025 23:17:10 +0200
 
