@@ -12,6 +12,7 @@ Build-Depends:
  libpam0g-dev,
  librhonabwy-dev (>= 1.1.11),
  libsasl2-dev,
+ libyder-dev,
 Standards-Version: 3.7.2
 
 Package: libsasl2-modules-oauthbearer

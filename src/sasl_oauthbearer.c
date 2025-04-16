@@ -44,6 +44,10 @@
 
 #include <jansson.h>
 
+#ifdef HACK
+#include <yder.h>
+#endif
+
 #include <sasl/sasl.h>
 #include <sasl/saslplug.h>
 #include <sasl/saslutil.h>
@@ -613,6 +617,9 @@ int sasl_server_plug_init(
 	gctx = (oauth_glob_context_t *)oauth_server_plugin.glob_context;
 	memset(gctx, 0, sizeof(*gctx));
 
+#ifdef HACK
+	y_init_logs("crudeoauth", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Starting SASL OAUTHBEARER");
+#endif
 	if (r_global_init() != RHN_OK) {
 		utils->log(NULL, SASL_LOG_ERR, "OAUTHBEARER r_global_init failed");
 		return SASL_FAIL;
