@@ -578,7 +578,8 @@ static void oauth_server_mech_free(
 static sasl_server_plug_t oauth_server_plugin = {
 	"OAUTHBEARER",  /* mech_name */
 	0,  /* max_ssf */
-	SASL_SEC_NOANONYMOUS,  /* security_flags */
+	// setting SASL_SEC_NOPLAINTEXT allows non-TLS connections. We check TLS encryption in oauth_server_mech_step() based on configuration.
+	SASL_SEC_NOPLAINTEXT | SASL_SEC_NOANONYMOUS, /* security_flags */
 	SASL_FEAT_WANT_CLIENT_FIRST | SASL_FEAT_ALLOWS_PROXY, /* features */
 	&server_glob_context,  /* glob_context */
 	&oauth_server_mech_new,  /* mech_new */

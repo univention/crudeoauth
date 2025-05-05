@@ -1,3 +1,9 @@
+crudeoauth (1.0.0-5) unstable; urgency=medium
+
+  * Bug #58210: fix TLS check for server side
+
+ -- Florian Best <best@univention.de>  Mon, 05 May 2025 21:37:18 +0200
+
 crudeoauth (1.0.0-4) unstable; urgency=medium
 
   * Bug #57508: add manpages
