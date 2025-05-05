@@ -39,6 +39,7 @@ oauthbearer_trusted_iss0: https://sso.example.org/realms/master
 oauthbearer_trusted_aud0: ldaps://example.org/
 # oauthbearer_trusted_azp0: https:/client.example.org/oidc/
 # oauthbearer_required_scope0: openid
+# oauthbearer_no_tls: 0
 ```
 The `azp` and `scope` checks are optional and may provide additional security or be otherwise useful.
 
