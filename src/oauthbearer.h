@@ -81,3 +81,43 @@ int oauth_retcode(enum OAuthError);
 jwks_t * oauth_get_jwks(oauth_glob_context_t *, const void *);
 enum OAuthError oauth_check_jwt(oauth_serv_context_t *, const void *, const char **, char *);
 const char* oauth_enum_error_string(enum OAuthError);
+
+
+#pragma once
+#include <cjose/jws.h>
+#include <cjose/jwk.h>
+#include <jansson.h>
+
+typedef struct {
+    const char *expected_issuer;
+    const char *expected_audience;
+    const char *expected_azp;
+    const char *expected_scope;
+    const char *expected_uid;
+} oauth_utils_t;
+
+typedef struct {
+    cjose_jws_t *jws;
+    json_t *payload;
+} jwt_t;
+
+typedef enum {
+    OK = 0,
+    ERROR_SIGNATURE,
+    ERROR_ISSUER,
+    ERROR_AUDIENCE,
+    ERROR_VALIDITY,
+    ERROR_AZP,
+    ERROR_SCOPE,
+    ERROR_UID,
+    ERROR_PARSE
+} jwt_error_t;
+
+jwt_error_t oauth_check_jwt_signature(jwt_t *out, cjose_jwk_t *jwk, const char *jwt);
+jwt_error_t oauth_check_token_issuer(oauth_utils_t *utils, jwt_t *jwt);
+jwt_error_t oauth_check_token_audience(oauth_utils_t *utils, jwt_t *jwt);
+jwt_error_t oidc_check_token_authorized_party(oauth_utils_t *utils, jwt_t *jwt);
+jwt_error_t oauth_check_token_validity_dates(jwt_t *jwt);
+jwt_error_t oauth_check_required_scopes(oauth_utils_t *utils, jwt_t *jwt);
+jwt_error_t oauth_check_token_uid(oauth_utils_t *utils, jwt_t *jwt);
+void jwt_free(jwt_t *jwt);

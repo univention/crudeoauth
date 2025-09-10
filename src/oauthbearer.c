@@ -302,11 +302,6 @@ jwks_t * oauth_get_jwks(
 ) {
 	jwks_t *jwks;
 
-	if (r_jwks_init(&jwks) != RHN_OK) {
-		oauth_error(utils, 0, "Error in r_jwks_init");
-		goto out;
-	}
-
 	if (r_jwks_import_from_json_str(jwks, gctx->trusted_jwks_str) != RHN_OK) {
 		oauth_error(utils, 0, "Error in r_jwks_import_from_str");
 		goto out;
@@ -348,6 +343,13 @@ jwks_t * oauth_get_jwks(
 out:
 	return NULL;
 }
+cjose_jwk_t *load_jwk_from_file(const char *filename) {
+    cjose_err err;
+    cjose_jwk_t *jwk = cjose_jwk_import(data, len, &err);
+    free(data);
+
+    return jwk;
+}
 
 
 enum OAuthError oauth_check_jwt(
@@ -384,6 +386,12 @@ enum OAuthError oauth_check_jwt(
 		oauth_error(utils, 0, "Error in r_jwt_parse");
 		return PARSE_ERROR;
 	}
+
+	cjose_jwk_t *jwk = load_jwk_from_file("jwk.json");
+if (!jwk) {
+    fprintf(stderr, "JWK konnte nicht geladen werden\n");
+    return 1;
+}
 
 	if ((error = oauth_check_jwt_signature(ctx, utils, jwt)) != OK)
 		return error;
@@ -463,3 +471,92 @@ int main() {
 	y_close_logs();
 }
 #endif /*HACK*/
+
+#include "oauth_jwt.h"
+#include <string.h>
+#include <time.h>
+#include <cjose/jwk.h>
+#include <jansson.h>
+#include <stdio.h>
+
+
+
+jwt_error_t oauth_check_jwt_signature(jwt_t *out, cjose_jwk_t *jwk, const char *jwt) {
+    cjose_err err;
+    cjose_jws_t *jws = NULL;
+    if (!cjose_jws_import((const uint8_t *)jwt, strlen(jwt), &jws, &err))
+        return ERROR_SIGNATURE;
+
+    if (!cjose_jws_verify(jws, jwk, &err)) {
+        cjose_jws_release(jws);
+        return ERROR_SIGNATURE;
+    }
+
+    const uint8_t *payload_raw;
+    size_t payload_len;
+    if (!cjose_jws_get_plaintext(jws, &payload_raw, &payload_len, &err)) {
+        cjose_jws_release(jws);
+        return ERROR_PARSE;
+    }
+
+    json_error_t jerr;
+    json_t *payload = json_loadb((const char *)payload_raw, payload_len, 0, &jerr);
+    if (!payload) {
+        cjose_jws_release(jws);
+        return ERROR_PARSE;
+    }
+
+    out->jws = jws;
+    out->payload = payload;
+    return OK;
+}
+
+void jwt_free(jwt_t *jwt) {
+    if (jwt->jws) cjose_jws_release(jwt->jws);
+    if (jwt->payload) json_decref(jwt->payload);
+}
+
+jwt_error_t oauth_check_token_issuer(oauth_utils_t *utils, jwt_t *jwt) {
+    const char *iss = json_string_value(json_object_get(jwt->payload, "iss"));
+    return (iss && strcmp(iss, utils->expected_issuer) == 0) ? OK : ERROR_ISSUER;
+}
+
+jwt_error_t oauth_check_token_audience(oauth_utils_t *utils, jwt_t *jwt) {
+    json_t *aud = json_object_get(jwt->payload, "aud");
+    if (json_is_string(aud))
+        return strcmp(json_string_value(aud), utils->expected_audience) == 0 ? OK : ERROR_AUDIENCE;
+    if (json_is_array(aud)) {
+        size_t i;
+        for (i = 0; i < json_array_size(aud); i++) {
+            const char *v = json_string_value(json_array_get(aud, i));
+            if (v && strcmp(v, utils->expected_audience) == 0)
+                return OK;
+        }
+    }
+    return ERROR_AUDIENCE;
+}
+
+jwt_error_t oidc_check_token_authorized_party(oauth_utils_t *utils, jwt_t *jwt) {
+    const char *azp = json_string_value(json_object_get(jwt->payload, "azp"));
+    return (azp && strcmp(azp, utils->expected_azp) == 0) ? OK : ERROR_AZP;
+}
+
+jwt_error_t oauth_check_token_validity_dates(jwt_t *jwt) {
+    time_t now = time(NULL);
+    json_int_t iat = json_integer_value(json_object_get(jwt->payload, "iat"));
+    json_int_t exp = json_integer_value(json_object_get(jwt->payload, "exp"));
+    json_int_t nbf = json_integer_value(json_object_get(jwt->payload, "nbf"));
+    if ((iat && now < iat) || (exp && now >= exp) || (nbf && now < nbf))
+        return ERROR_VALIDITY;
+    return OK;
+}
+
+jwt_error_t oauth_check_required_scopes(oauth_utils_t *utils, jwt_t *jwt) {
+    const char *scope = json_string_value(json_object_get(jwt->payload, "scope"));
+    return (scope && strstr(scope, utils->expected_scope)) ? OK : ERROR_SCOPE;
+}
+
+jwt_error_t oauth_check_token_uid(oauth_utils_t *utils, jwt_t *jwt) {
+    const char *sub = json_string_value(json_object_get(jwt->payload, "sub"));
+    return (sub && strcmp(sub, utils->expected_uid) == 0) ? OK : ERROR_UID;
+}
