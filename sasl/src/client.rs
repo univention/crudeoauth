@@ -32,114 +32,118 @@ struct ClientContext {
     output: Vec<u8>,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn client_step(
-    utils: &Utils,
-    ctx: &mut ClientContext,
-    server_in: &[u8],
+/// One client step, translated out of the raw ABI by client_mech_step.
+struct ClientStep<'a> {
+    utils: Utils<'a>,
+    ctx: &'a mut ClientContext,
+    server_in: &'a [u8],
     is_final: bool,
     ssf_too_weak: bool,
-    mut prompts: Prompts,
-    canon: Option<CanonUser>,
-    out: &mut OutBuf,
-    oparams: &mut OutParams,
-) -> i32 {
-    if server_in.len() as u32 > MAX_SERVERIN_LEN {
-        utils.set_error("server data too big");
-        return SASL_BADPROT;
-    }
+    prompts: Prompts<'a>,
+    canon: Option<CanonUser<'a>>,
+    out: OutBuf<'a>,
+    oparams: OutParams<'a>,
+}
 
-    if is_final {
-        // RFC 7628 3.2.2: the server rejected the token with a JSON error.
-        // Complete the error message sequence (3.2.3) with a single %x01.
-        utils.set_error(&format!(
-            "Authentication failed ({})",
-            String::from_utf8_lossy(server_in)
-        ));
-        ctx.output.clear();
-        ctx.output.push(0x01);
-        out.publish(&ctx.output);
-        oparams.finish();
-        return SASL_OK;
-    }
-
-    out.clear();
-
-    if ssf_too_weak {
-        utils.set_error("SSF too weak for the OAUTHBEARER plugin");
-        return SASL_TOOWEAK;
-    }
-
-    let user = utils.get_simple(&prompts, SASL_CB_USER);
-    let pass = utils.get_password(&prompts);
-
-    // The prompt results are harvested; release the array we allocated in the
-    // previous round before possibly requesting a new one.
-    prompts.release(utils);
-
-    let want_user = matches!(user, CbValue::NeedPrompt);
-    let want_pass = matches!(pass, CbValue::NeedPrompt);
-    if want_user || want_pass {
-        return prompts.request(utils, want_user, want_pass);
-    }
-
-    let authzid = match user {
-        CbValue::Value(v) => v,
-        CbValue::Fail(rc) => return rc,
-        CbValue::NeedPrompt => unreachable!(),
-    };
-    let token = match pass {
-        CbValue::Value(Some(v)) => v,
-        CbValue::Value(None) => {
-            utils.set_error("Bad parameter (no Access Token)");
-            return SASL_BADPARAM;
+impl ClientStep<'_> {
+    fn run(mut self) -> i32 {
+        if self.server_in.len() as u32 > MAX_SERVERIN_LEN {
+            self.utils.set_error("server data too big");
+            return SASL_BADPROT;
         }
-        CbValue::Fail(rc) => return rc,
-        CbValue::NeedPrompt => unreachable!(),
-    };
-    let Ok(token) = std::str::from_utf8(&token) else {
-        utils.set_error("Access Token is not valid UTF-8");
-        return SASL_BADPARAM;
-    };
 
-    let Some(canon) = canon else {
-        utils.set_error("canon_user callback is NULL");
-        return SASL_FAIL;
-    };
-    let authzid = match authzid.filter(|v| !v.is_empty()) {
-        None => None,
-        Some(v) => match String::from_utf8(v) {
-            Ok(s) => Some(s),
-            Err(_) => {
-                utils.set_error("authzid is not valid UTF-8");
+        if self.is_final {
+            // RFC 7628 3.2.2: the server rejected the token with a JSON error.
+            // Complete the error message sequence (3.2.3) with a single %x01.
+            self.utils.set_error(&format!(
+                "Authentication failed ({})",
+                String::from_utf8_lossy(self.server_in)
+            ));
+            self.ctx.output.clear();
+            self.ctx.output.push(0x01);
+            self.out.publish(&self.ctx.output);
+            self.oparams.finish();
+            return SASL_OK;
+        }
+
+        self.out.clear();
+
+        if self.ssf_too_weak {
+            self.utils.set_error("SSF too weak for the OAUTHBEARER plugin");
+            return SASL_TOOWEAK;
+        }
+
+        let user = self.utils.get_simple(&self.prompts, SASL_CB_USER);
+        let pass = self.utils.get_password(&self.prompts);
+
+        // The prompt results are harvested; release the array we allocated in
+        // the previous round before possibly requesting a new one.
+        self.prompts.release(&self.utils);
+
+        let want_user = matches!(user, CbValue::NeedPrompt);
+        let want_pass = matches!(pass, CbValue::NeedPrompt);
+        if want_user || want_pass {
+            return self.prompts.request(&self.utils, want_user, want_pass);
+        }
+
+        let authzid = match user {
+            CbValue::Value(v) => v,
+            CbValue::Fail(rc) => return rc,
+            CbValue::NeedPrompt => unreachable!(),
+        };
+        let token = match pass {
+            CbValue::Value(Some(v)) => v,
+            CbValue::Value(None) => {
+                self.utils.set_error("Bad parameter (no Access Token)");
                 return SASL_BADPARAM;
             }
-        },
-    };
-
-    // The real identity is derived from the token by the server; use the
-    // "anonymous" placeholder for the client-side authcid like the C plugin.
-    let anonymous = c"anonymous";
-    let rc = canon.apply(anonymous, SASL_CU_AUTHID, oparams);
-    if rc != SASL_OK {
-        return rc;
-    }
-    let rc = if let Some(authzid) = &authzid {
-        let Ok(authzid_c) = CString::new(authzid.as_str()) else {
-            utils.set_error("authzid contains NUL");
+            CbValue::Fail(rc) => return rc,
+            CbValue::NeedPrompt => unreachable!(),
+        };
+        let Ok(token) = std::str::from_utf8(&token) else {
+            self.utils.set_error("Access Token is not valid UTF-8");
             return SASL_BADPARAM;
         };
-        canon.apply(&authzid_c, SASL_CU_AUTHZID, oparams)
-    } else {
-        canon.apply(anonymous, SASL_CU_AUTHZID, oparams)
-    };
-    if rc != SASL_OK {
-        return rc;
-    }
 
-    ctx.output = build_client_response(authzid.as_deref(), token);
-    out.publish(&ctx.output);
-    SASL_CONTINUE
+        let Some(canon) = self.canon else {
+            self.utils.set_error("canon_user callback is NULL");
+            return SASL_FAIL;
+        };
+        let authzid = match authzid.filter(|v| !v.is_empty()) {
+            None => None,
+            Some(v) => match String::from_utf8(v) {
+                Ok(s) => Some(s),
+                Err(_) => {
+                    self.utils.set_error("authzid is not valid UTF-8");
+                    return SASL_BADPARAM;
+                }
+            },
+        };
+
+        // The real identity is derived from the token by the server; use the
+        // "anonymous" placeholder for the client-side authcid like the C plugin.
+        let anonymous = c"anonymous";
+        let rc = canon.apply(anonymous, SASL_CU_AUTHID, &mut self.oparams);
+        if rc != SASL_OK {
+            return rc;
+        }
+        let rc = if let Some(authzid) = &authzid {
+            let Ok(authzid_c) = CString::new(authzid.as_str()) else {
+                self.utils.set_error("authzid contains NUL");
+                return SASL_BADPARAM;
+            };
+            canon.apply(&authzid_c, SASL_CU_AUTHZID, &mut self.oparams)
+        } else {
+            canon.apply(anonymous, SASL_CU_AUTHZID, &mut self.oparams)
+        };
+        if rc != SASL_OK {
+            return rc;
+        }
+
+        self.ctx.output = build_client_response(authzid.as_deref(), token);
+        self.out.publish(&self.ctx.output);
+        SASL_CONTINUE
+    }
 }
 
 unsafe extern "C" fn client_mech_new(
@@ -172,7 +176,7 @@ unsafe extern "C" fn client_mech_step(
             return SASL_BADPARAM;
         }
         let params = unsafe { &mut *c_params };
-        let (Some(utils), Some(mut out), Some(mut oparams)) = (
+        let (Some(utils), Some(out), Some(oparams)) = (
             unsafe { Utils::from_raw(params.utils) },
             unsafe { OutBuf::from_raw(client_out, client_out_len as *mut c_uint) },
             unsafe { OutParams::from_raw(oparams) },
@@ -189,17 +193,18 @@ unsafe extern "C" fn client_mech_step(
         let canon = unsafe { CanonUser::from_parts(params.canon_user, utils.conn()) };
         let ssf_too_weak = params.props.min_ssf > params.external_ssf;
 
-        client_step(
-            &utils,
+        ClientStep {
+            utils,
             ctx,
             server_in,
-            server_in_len != 0,
+            is_final: server_in_len != 0,
             ssf_too_weak,
             prompts,
             canon,
-            &mut out,
-            &mut oparams,
-        )
+            out,
+            oparams,
+        }
+        .run()
     })
 }
 
