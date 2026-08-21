@@ -15,6 +15,7 @@
 //! below only validate raw arguments, build the wrappers, guard against
 //! panics and dispatch.
 
+mod cache;
 mod ffi;
 
 use std::ffi::{c_char, c_int};
@@ -137,14 +138,7 @@ fn authenticate(pam: &PamHandle, raw_args: &[String]) -> c_int {
         slog(libc::LOG_ERR, "iss and/or jwks missing");
         return PAM_OPEN_ERR;
     };
-    let jwks_json = match std::fs::read_to_string(&jwks) {
-        Ok(v) => v,
-        Err(e) => {
-            slog(libc::LOG_ERR, &format!("failed to read JWKS {jwks:?}: {e}"));
-            return PAM_OPEN_ERR;
-        }
-    };
-    let policy = JwtPolicy {
+    let make_policy = || JwtPolicy {
         uid_attr: args.userid,
         grace: args.grace,
         trusted_issuer: iss,
@@ -155,9 +149,13 @@ fn authenticate(pam: &PamHandle, raw_args: &[String]) -> c_int {
         allowed_algorithms: None,
         disallowed_algorithms: vec![],
     };
-    let verifier = match JwtVerifier::from_jwks_json(policy, &jwks_json) {
+    let verifier = match cache::verifier(raw_args, &jwks, make_policy) {
         Ok(v) => v,
-        Err(e) => {
+        Err(cache::CacheError::Read(e)) => {
+            slog(libc::LOG_ERR, &e);
+            return PAM_OPEN_ERR;
+        }
+        Err(cache::CacheError::Build(e)) => {
             slog(libc::LOG_ERR, &format!("JWT verifier setup failed: {e}"));
             return PAM_SYSTEM_ERR;
         }
