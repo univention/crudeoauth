@@ -21,7 +21,7 @@ mod ffi;
 use std::ffi::{c_char, c_int};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crudeoauth_core::jwt::{JwtPolicy, JwtVerifier};
+use crudeoauth_core::jwt::JwtPolicy;
 use ffi::{
     account_exists, slog, PamHandle, PAM_AUTHTOK, PAM_AUTH_ERR, PAM_IGNORE, PAM_OPEN_ERR,
     PAM_RHOST, PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_TRY_AGAIN,
