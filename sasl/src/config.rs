@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Univention GmbH
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{ffi::{CStr, CString}, fs};
+use std::fs;
 
 use jsonwebtoken::Algorithm;
-use sasl2_sys::prelude::sasl_utils_t;
 
 use crudeoauth_core::jwt::{parse_algorithm_name, JwtPolicy, JwtVerifier, OAuthError};
 
-const PLUGIN_NAME: &[u8] = b"OAUTHBEARER\0";
+use crate::ffi::Utils;
 
 pub struct ServerConfig {
     pub tls_required: bool,
@@ -16,23 +15,20 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    pub unsafe fn from_sasl(utils: *const sasl_utils_t) -> Result<Self, String> {
-        if utils.is_null() {
-            return Err("NULL sasl_utils".into());
-        }
+    pub fn from_sasl(utils: &Utils) -> Result<Self, String> {
 
-        let uid_attr = unsafe { get_opt(utils, "oauthbearer_userid")? }
+        let uid_attr = get_opt(utils, "oauthbearer_userid")?
             .filter(|v| !v.is_empty()).unwrap_or_else(|| "preferred_username".into());
-        let grace = unsafe { get_opt(utils, "oauthbearer_grace")? }
+        let grace = get_opt(utils, "oauthbearer_grace")?
             .as_deref().unwrap_or("3").parse::<i64>()
             .map_err(|e| format!("invalid oauthbearer_grace: {e}"))?;
-        let no_tls = unsafe { get_opt(utils, "oauthbearer_no_tls")? }
+        let no_tls = get_opt(utils, "oauthbearer_no_tls")?
             .as_deref() == Some("1");
 
-        let trusted_audiences = unsafe { get_indexed(utils, "oauthbearer_trusted_aud")? };
-        let trusted_authorized_parties = unsafe { get_indexed(utils, "oauthbearer_trusted_azp")? };
-        let required_scopes = unsafe { get_indexed(utils, "oauthbearer_required_scope")? };
-        let disallowed_usernames = unsafe { get_list_option(utils, "oauthbearer_disallowed_username")? };
+        let trusted_audiences = get_indexed(utils, "oauthbearer_trusted_aud")?;
+        let trusted_authorized_parties = get_indexed(utils, "oauthbearer_trusted_azp")?;
+        let required_scopes = get_indexed(utils, "oauthbearer_required_scope")?;
+        let disallowed_usernames = get_list_option(utils, "oauthbearer_disallowed_username")?;
 
         // Optional algorithm policy. Numbered options match the existing SASL
         // configuration style. For convenience, an unnumbered comma/space
@@ -40,8 +36,8 @@ impl ServerConfig {
         //
         // Omitted allowed_alg => preserve historical behavior.
         // disallowed_alg is always subtracted from the effective allow-list.
-        let allowed_names = unsafe { get_list_option(utils, "oauthbearer_allowed_alg")? };
-        let disallowed_names = unsafe { get_list_option(utils, "oauthbearer_disallowed_alg")? };
+        let allowed_names = get_list_option(utils, "oauthbearer_allowed_alg")?;
+        let disallowed_names = get_list_option(utils, "oauthbearer_disallowed_alg")?;
         let allowed_algorithms = if allowed_names.is_empty() {
             None
         } else {
@@ -52,9 +48,9 @@ impl ServerConfig {
             disallowed_names,
         )?;
 
-        let trusted_issuer = unsafe { get_opt(utils, "oauthbearer_trusted_iss0")? }
+        let trusted_issuer = get_opt(utils, "oauthbearer_trusted_iss0")?
             .filter(|v| !v.is_empty()).ok_or("No trusted issuer configured")?;
-        let jwks_filename = unsafe { get_opt(utils, "oauthbearer_trusted_jwks0")? }
+        let jwks_filename = get_opt(utils, "oauthbearer_trusted_jwks0")?
             .filter(|v| !v.is_empty()).ok_or("No JWKS configured")?;
         let jwks_json = fs::read_to_string(&jwks_filename)
             .map_err(|e| format!("failed to read JWKS {jwks_filename:?}: {e}"))?;
@@ -89,13 +85,13 @@ fn parse_algorithms(option: &str, values: Vec<String>) -> Result<Vec<Algorithm>,
     Ok(result)
 }
 
-unsafe fn get_list_option(utils: *const sasl_utils_t, name: &str) -> Result<Vec<String>, String> {
-    let indexed = unsafe { get_indexed(utils, name)? };
+fn get_list_option(utils: &Utils, name: &str) -> Result<Vec<String>, String> {
+    let indexed = get_indexed(utils, name)?;
     if !indexed.is_empty() {
         return Ok(indexed);
     }
 
-    let Some(value) = (unsafe { get_opt(utils, name)? }) else {
+    let Some(value) = get_opt(utils, name)? else {
         return Ok(Vec::new());
     };
 
@@ -106,11 +102,11 @@ unsafe fn get_list_option(utils: *const sasl_utils_t, name: &str) -> Result<Vec<
         .collect())
 }
 
-unsafe fn get_indexed(utils: *const sasl_utils_t, prefix: &str) -> Result<Vec<String>, String> {
+fn get_indexed(utils: &Utils, prefix: &str) -> Result<Vec<String>, String> {
     let mut values = Vec::new();
     for index in 0usize.. {
         let name = format!("{prefix}{index}");
-        match unsafe { get_opt(utils, &name)? } {
+        match get_opt(utils, &name)? {
             Some(v) if !v.is_empty() => values.push(v),
             Some(_) => return Err(format!("empty SASL option {name}")),
             None => break,
@@ -119,21 +115,6 @@ unsafe fn get_indexed(utils: *const sasl_utils_t, prefix: &str) -> Result<Vec<St
     Ok(values)
 }
 
-unsafe fn get_opt(utils: *const sasl_utils_t, option: &str) -> Result<Option<String>, String> {
-    let getopt = unsafe { (*utils).getopt }.ok_or("sasl_utils.getopt is NULL")?;
-    let option = CString::new(option).map_err(|_| "invalid SASL option name")?;
-    let mut value = std::ptr::null();
-    let rc = unsafe {
-        getopt(
-            (*utils).getopt_context,
-            PLUGIN_NAME.as_ptr().cast(),
-            option.as_ptr(),
-            &mut value,
-            std::ptr::null_mut(),
-        )
-    };
-    if rc != 0 || value.is_null() {
-        return Ok(None);
-    }
-    Ok(Some(unsafe { CStr::from_ptr(value) }.to_string_lossy().into_owned()))
+fn get_opt(utils: &Utils, option: &str) -> Result<Option<String>, String> {
+    utils.option(option)
 }
