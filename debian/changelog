@@ -1,3 +1,11 @@
+crudeoauth (2.0.1) unstable; urgency=medium
+
+  * Issue #2: Rewrite in Rust
+  * support configuration for disallowed_usernames, allowed_algorithms,
+  	disallowed_algorithms.
+
+ -- Florian Best <best@univention.de>  Fri, 21 Aug 2026 12:38:16 +0200
+
 crudeoauth (1.0.1) unstable; urgency=medium
 
   * Bug #59470: make compilable with modern compilers

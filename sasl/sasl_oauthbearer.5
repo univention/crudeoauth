@@ -1,0 +1,148 @@
+.TH sasl_oauthbearer 5 "August 2026" "crudeoauth" "File Formats and Conventions"
+.SH NAME
+OAUTHBEARER \- SASL mechanism for OAuth 2.0 bearer token authentication
+.SH SYNOPSIS
+.B /etc/ldap/sasl2/slapd.conf
+.br
+SASL configuration file for OpenLDAP or another Cyrus SASL consumer.
+.SH DESCRIPTION
+The
+.B OAUTHBEARER
+SASL mechanism implements OAuth 2.0 bearer token authentication according to RFC 7628.
+The server side validates signed JWT access tokens against locally configured trusted JWKS files and applies issuer, audience, time, scope, authorized-party, algorithm, and username policy checks.
+.PP
+The JWT signature is verified using the key selected by the token's
+.B kid
+header. JWKS entries that are not usable for signature verification, for example encryption keys, are ignored. A JWK
+.B alg
+value, when present, must be compatible with the JWT algorithm.
+.SH CONFIGURATION
+Configuration options are specified in the SASL configuration file, commonly
+.I /etc/ldap/sasl2/slapd.conf
+for OpenLDAP.
+.PP
+Options whose names end in a number can be repeated by using consecutive indices starting at 0.
+.TP
+.B mech_list
+Must include
+.BR OAUTHBEARER .
+.TP
+.B oauthbearer_grace
+Allowed clock skew in seconds when checking
+.BR nbf ,
+.B iat
+and
+.B exp .
+The default is 3 seconds. The grace period does not extend the configured lifetime of a token; it only tolerates clock skew around token timestamps.
+.TP
+.B oauthbearer_userid
+JWT claim used as the SASL authentication identity (authcid).
+The default is
+.BR preferred_username .
+.TP
+.B oauthbearer_disallowed_username0
+Reject the resolved username if it matches this value. The comparison is case-insensitive.
+This option can be repeated as
+.BR oauthbearer_disallowed_username1 ,
+.B oauthbearer_disallowed_username2
+and so on. It can be used, for example, to prevent an identity provider from authenticating directly as privileged local accounts such as
+.BR root .
+.TP
+.B oauthbearer_trusted_jwks0
+Path to a JWKS file containing trusted verification keys. At least one JWKS file must be configured.
+Multiple files may be specified using consecutive numeric suffixes.
+.TP
+.B oauthbearer_trusted_iss0
+Trusted value of the
+.B iss
+(Issuer) claim. Tokens from other issuers are rejected.
+.TP
+.B oauthbearer_trusted_aud0
+Trusted value of the
+.B aud
+(Audience) claim. At least one trusted audience must be configured. A token is accepted if its audience matches a configured value.
+.TP
+.B oauthbearer_trusted_azp0
+Trusted value of the optional
+.B azp
+(Authorized Party) claim. If trusted authorized parties are configured, a present
+.B azp
+claim must match one of them.
+.TP
+.B oauthbearer_required_scope0
+Require the named OAuth scope. Multiple scopes may be required by using consecutive numeric suffixes. The token's
+.B scope
+claim is interpreted as a space-separated OAuth scope list.
+.TP
+.B oauthbearer_allowed_alg0
+Optional allow-list for JWT signature algorithms. If omitted, the built-in algorithm policy is used.
+If one or more values are configured, only those algorithms are accepted, subject also to the disallow-list and JWK compatibility checks.
+Supported names are
+.BR RS256 ,
+.BR RS384 ,
+.BR RS512 ,
+.BR PS256 ,
+.BR PS384 ,
+.BR PS512 ,
+.BR ES256 ,
+.BR ES384
+and
+.BR EdDSA .
+.TP
+.B oauthbearer_disallowed_alg0
+Optional deny-list for JWT signature algorithms. A disallowed algorithm is rejected even if it is part of the built-in policy or explicitly allowed with
+.BR oauthbearer_allowed_algN .
+This is useful for disabling an algorithm locally without having to reproduce the complete allow-list.
+.TP
+.B oauthbearer_no_tls
+Set to
+.B 1
+to disable the plugin's TLS requirement.
+The default is to require an encrypted connection. Disabling this check is not recommended because bearer tokens can be replayed by anyone who obtains them.
+.SH JWT VALIDATION
+The server verifies the JWT signature before accepting the token claims.
+It requires a known
+.B kid
+and selects the corresponding key only from the configured JWKS data.
+Token-provided key URLs or embedded keys are not used as trust sources.
+.PP
+The configured issuer and audience are checked. If configured, authorized party and required scopes are also checked.
+The
+.BR nbf ,
+.B iat
+and
+.B exp
+claims are checked when present using
+.B oauthbearer_grace
+for clock skew.
+The configured username claim must be present and must not match a configured disallowed username.
+.PP
+.B RSA-OAEP
+is a JWE key-management algorithm, not a JWT signature algorithm. JWKS files may contain such encryption keys; they are ignored for JWS signature verification rather than causing the complete JWKS to be rejected.
+.SH MAPPING TO LDAP DN
+After a successful SASL bind, OpenLDAP provides a SASL identity such as:
+.IP
+uid=username,cn=oauthbearer,cn=auth
+.PP
+It can be mapped to a directory DN with
+.B authz-regexp
+in
+.I slapd.conf
+for example:
+.PP
+.nf
+authz-regexp
+    uid=([^,]*),cn=oauthbearer,cn=auth
+    ldap:///dc=example,dc=org??sub?uid=$1
+.fi
+.SH SEE ALSO
+.BR slapd (8),
+.BR pam_oauthbearer (5),
+RFC 7628,
+RFC 7517,
+RFC 8725,
+RFC 9068
+.SH AUTHOR
+Univention GmbH
+.SH HOMEPAGE
+https://github.com/univention/crudeoauth
