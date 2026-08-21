@@ -1,0 +1,125 @@
+.TH pam_oauthbearer 5 "August 2026" "crudeoauth" "System Administration Utilities"
+.SH NAME
+pam_oauthbearer \- PAM module for OAuth 2.0 bearer token authentication
+.SH SYNOPSIS
+.B auth
+.I sufficient
+.B pam_oauthbearer.so
+[\fIoptions\fR...]
+.SH DESCRIPTION
+The
+.B pam_oauthbearer
+module allows PAM-aware applications to authenticate users with signed JWT OAuth 2.0 access tokens.
+It verifies the token against locally configured trusted JWKS data and applies issuer, audience, time, scope, authorized-party, algorithm, and username policy checks.
+.PP
+The JWT signing key is selected by
+.BR kid .
+JWKS entries that are not usable for signature verification, such as encryption keys, are ignored.
+.SH OPTIONS
+Options that may occur multiple times can be specified repeatedly.
+.TP
+.B grace=\fIN\fR
+Permits \fIN\fR seconds of clock skew when checking
+.BR nbf ,
+.B iat
+and
+.B exp .
+The default is 3 seconds.
+.TP
+.B userid=\fICLAIM\fR
+JWT claim from which the authentication username is extracted.
+The default is
+.BR preferred_username .
+.TP
+.B disallowed_username=\fIUSER\fR
+Reject the resolved username if it matches \fIUSER\fR. Matching is case-insensitive.
+The option may be repeated. For example,
+.B disallowed_username=root
+prevents a valid token from authenticating as the local root account.
+.TP
+.B iss=\fIURL\fR
+Trusted Issuer claim value.
+.TP
+.B jwks=\fIPATH\fR
+Path to a JWKS file containing trusted verification keys.
+.TP
+.B trusted_aud=\fISTRING\fR
+Trusted Audience claim value. This option may be repeated.
+.TP
+.B trusted_azp=\fISTRING\fR
+Trusted Authorized Party claim value. Optional and repeatable.
+.TP
+.B required_scope=\fISCOPE\fR
+Require an OAuth scope. Optional and repeatable. The token's
+.B scope
+claim is interpreted as a space-separated scope list.
+.TP
+.B allowed_alg=\fIALGORITHM\fR
+Optional JWT signature-algorithm allow-list. The option may be repeated.
+If omitted, the built-in algorithm policy is used.
+Supported names are
+.BR RS256 ,
+.BR RS384 ,
+.BR RS512 ,
+.BR PS256 ,
+.BR PS384 ,
+.BR PS512 ,
+.BR ES256 ,
+.BR ES384
+and
+.BR EdDSA .
+.TP
+.B disallowed_alg=\fIALGORITHM\fR
+Optional JWT signature-algorithm deny-list. The option may be repeated.
+A denied algorithm is rejected even when it is otherwise allowed.
+.SH SECURITY NOTES
+Bearer tokens are credentials and must be protected from disclosure.
+The service transporting them should provide adequate transport security.
+.PP
+The module only trusts signing keys from the configured JWKS data.
+A JWK's key type and metadata must be compatible with the JWT signature algorithm.
+Encryption-only keys, including keys marked for
+.BR RSA-OAEP ,
+are not used for signature verification.
+.PP
+The configured issuer and audience are checked, and optional authorized-party and scope restrictions can further narrow which access tokens are accepted.
+The username deny-list can be used to protect privileged local account names.
+.SH EXAMPLE
+.PP
+.nf
+auth sufficient pam_oauthbearer.so grace=3 userid=preferred_username \\
+    iss=https://sso.example.org/realms/master \\
+    jwks=/usr/share/oidc/authkeys.jwks \\
+    trusted_aud=ldaps://example.org/ \\
+    trusted_azp=https://client.example.org/oidc/ \\
+    required_scope=openid \\
+    allowed_alg=RS256 disallowed_username=root
+.fi
+.SH FILES
+.TP
+.B /usr/lib/\fIMULTIARCH\fR/security/pam_oauthbearer.so
+Typical module location on Debian multiarch systems.
+.SH RETURN VALUES
+.TP
+.B PAM_SUCCESS
+Authentication succeeded.
+.TP
+.B PAM_AUTH_ERR
+Authentication failed or the token was rejected.
+.TP
+.B PAM_CRED_ERR
+The configured user ID could not be extracted from the token.
+.TP
+.B PAM_SYSTEM_ERR
+Internal module or configuration error.
+.SH SEE ALSO
+.BR pam (7),
+.BR pam.d (5),
+.BR sasl_oauthbearer (5),
+RFC 7517,
+RFC 8725,
+RFC 9068
+.SH AUTHOR
+Univention GmbH
+.SH HOMEPAGE
+https://github.com/univention/crudeoauth
