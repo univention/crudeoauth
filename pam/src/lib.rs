@@ -9,83 +9,23 @@
 //!   userid=, grace=, iss=, jwks=, trusted_aud=, trusted_azp=,
 //!   required_scope=, only_from=
 //! (trusted_aud/trusted_azp/required_scope may be given multiple times.)
+//!
+//! Structure: `ffi` wraps the PAM ABI in the safe `PamHandle`; the module
+//! logic (`authenticate`) is safe Rust; the `unsafe extern "C"` entry points
+//! below only validate raw arguments, build the wrappers, guard against
+//! panics and dispatch.
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+mod ffi;
+
+use std::ffi::{c_char, c_int};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::ptr::{null, null_mut};
 
 use crudeoauth_core::jwt::{JwtPolicy, JwtVerifier};
-
-pub const PAM_SUCCESS: c_int = 0;
-pub const PAM_OPEN_ERR: c_int = 1;
-pub const PAM_SYSTEM_ERR: c_int = 4;
-pub const PAM_AUTH_ERR: c_int = 7;
-pub const PAM_CONV_ERR: c_int = 19;
-pub const PAM_TRY_AGAIN: c_int = 24;
-pub const PAM_IGNORE: c_int = 25;
-
-const PAM_RHOST: c_int = 4;
-const PAM_CONV: c_int = 5;
-const PAM_AUTHTOK: c_int = 6;
-
-const PAM_PROMPT_ECHO_OFF: c_int = 1;
-
-#[repr(C)]
-pub struct pam_handle_t {
-    _opaque: [u8; 0],
-}
-
-#[repr(C)]
-pub struct pam_message {
-    pub msg_style: c_int,
-    pub msg: *const c_char,
-}
-
-#[repr(C)]
-pub struct pam_response {
-    pub resp: *mut c_char,
-    pub resp_retcode: c_int,
-}
-
-#[repr(C)]
-pub struct pam_conv {
-    pub conv: Option<
-        unsafe extern "C" fn(
-            c_int,
-            *mut *const pam_message,
-            *mut *mut pam_response,
-            *mut c_void,
-        ) -> c_int,
-    >,
-    pub appdata_ptr: *mut c_void,
-}
-
-#[link(name = "pam")]
-unsafe extern "C" {
-    fn pam_get_user(
-        pamh: *mut pam_handle_t,
-        user: *mut *const c_char,
-        prompt: *const c_char,
-    ) -> c_int;
-    fn pam_get_item(pamh: *mut pam_handle_t, item_type: c_int, item: *mut *const c_void)
-        -> c_int;
-    fn pam_set_item(pamh: *mut pam_handle_t, item_type: c_int, item: *const c_void) -> c_int;
-    fn pam_strerror(pamh: *mut pam_handle_t, errnum: c_int) -> *const c_char;
-}
-
-fn slog(pri: c_int, msg: &str) {
-    let Ok(msg) = CString::new(msg) else { return };
-    unsafe { libc::syslog(pri, c"%s".as_ptr(), msg.as_ptr()) };
-}
-
-fn pam_error(pamh: *mut pam_handle_t, rc: c_int) -> String {
-    let p = unsafe { pam_strerror(pamh, rc) };
-    if p.is_null() {
-        format!("PAM error {rc}")
-    } else {
-        unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
-    }
-}
+use ffi::{
+    account_exists, slog, PamHandle, PAM_AUTHTOK, PAM_AUTH_ERR, PAM_IGNORE, PAM_OPEN_ERR,
+    PAM_RHOST, PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_TRY_AGAIN,
+};
+pub use ffi::pam_handle_t;
 
 struct PamArgs {
     userid: String,
@@ -98,7 +38,7 @@ struct PamArgs {
     only_from: Vec<String>,
 }
 
-fn parse_args(argc: c_int, argv: *const *const c_char) -> Result<PamArgs, String> {
+fn parse_args(raw: &[String]) -> Result<PamArgs, String> {
     let mut args = PamArgs {
         userid: "preferred_username".into(),
         grace: 3,
@@ -109,15 +49,7 @@ fn parse_args(argc: c_int, argv: *const *const c_char) -> Result<PamArgs, String
         required_scope: Vec::new(),
         only_from: Vec::new(),
     };
-    if argv.is_null() {
-        return Ok(args);
-    }
-    for i in 0..argc.max(0) as usize {
-        let arg = unsafe { *argv.add(i) };
-        if arg.is_null() {
-            continue;
-        }
-        let arg = unsafe { CStr::from_ptr(arg) }.to_string_lossy();
+    for arg in raw {
         let Some((key, value)) = arg.split_once('=') else {
             continue;
         };
@@ -146,63 +78,8 @@ fn parse_args(argc: c_int, argv: *const *const c_char) -> Result<PamArgs, String
     Ok(args)
 }
 
-unsafe fn get_item_str(pamh: *mut pam_handle_t, item_type: c_int) -> Result<Option<String>, c_int> {
-    let mut item: *const c_void = null();
-    let rc = unsafe { pam_get_item(pamh, item_type, &mut item) };
-    if rc != PAM_SUCCESS {
-        return Err(rc);
-    }
-    if item.is_null() {
-        return Ok(None);
-    }
-    Ok(Some(unsafe { CStr::from_ptr(item.cast()) }.to_string_lossy().into_owned()))
-}
-
-/// Ask the application for the access token via the conversation.
-unsafe fn converse_for_token(pamh: *mut pam_handle_t) -> Result<String, c_int> {
-    let mut convptr: *const c_void = null();
-    let rc = unsafe { pam_get_item(pamh, PAM_CONV, &mut convptr) };
-    if rc != PAM_SUCCESS {
-        slog(libc::LOG_ERR, &format!("pam_get_item(PAM_CONV) failed: {}", pam_error(pamh, rc)));
-        return Err(rc);
-    }
-    let conv = convptr.cast::<pam_conv>();
-    let Some(conv_fn) = (unsafe { conv.as_ref() }).and_then(|c| c.conv) else {
-        return Err(PAM_CONV_ERR);
-    };
-
-    let msg = pam_message { msg_style: PAM_PROMPT_ECHO_OFF, msg: c"Access Token: ".as_ptr() };
-    let mut msgp: *const pam_message = &msg;
-    let mut resp: *mut pam_response = null_mut();
-    let rc = unsafe { conv_fn(1, &mut msgp, &mut resp, (*conv).appdata_ptr) };
-    if rc != PAM_SUCCESS {
-        slog(libc::LOG_ERR, &format!("PAM conv error: {}", pam_error(pamh, rc)));
-        return Err(rc);
-    }
-    if resp.is_null() {
-        return Err(PAM_CONV_ERR);
-    }
-    let answer = unsafe { (*resp).resp };
-    let token = if answer.is_null() {
-        None
-    } else {
-        let token = unsafe { CStr::from_ptr(answer) }.to_string_lossy().into_owned();
-        unsafe {
-            libc::memset(answer.cast(), 0, libc::strlen(answer));
-            libc::free(answer.cast());
-        }
-        Some(token)
-    };
-    unsafe { libc::free(resp.cast()) };
-    token.ok_or(PAM_CONV_ERR)
-}
-
-unsafe fn authenticate(
-    pamh: *mut pam_handle_t,
-    argc: c_int,
-    argv: *const *const c_char,
-) -> c_int {
-    let args = match parse_args(argc, argv) {
+fn authenticate(pam: &PamHandle, raw_args: &[String]) -> c_int {
+    let args = match parse_args(raw_args) {
         Ok(v) => v,
         Err(e) => {
             slog(libc::LOG_ERR, &e);
@@ -212,51 +89,46 @@ unsafe fn authenticate(
 
     // A configured only_from list restricts the OAuth check to those hosts.
     if !args.only_from.is_empty() {
-        let rhost = unsafe { get_item_str(pamh, PAM_RHOST) }.unwrap_or(None);
+        let rhost = pam.item_str(PAM_RHOST).unwrap_or(None);
         if !rhost.is_some_and(|h| args.only_from.iter().any(|allowed| *allowed == h)) {
             return PAM_IGNORE;
         }
     }
 
-    let mut userptr: *const c_char = null();
-    let rc = unsafe { pam_get_user(pamh, &mut userptr, null()) };
-    if rc != PAM_SUCCESS || userptr.is_null() {
-        slog(libc::LOG_ERR, &format!("pam_get_user() failed: {}", pam_error(pamh, rc)));
-        return if rc == PAM_SUCCESS { PAM_AUTH_ERR } else { rc };
-    }
-    let user = unsafe { CStr::from_ptr(userptr) }.to_string_lossy().into_owned();
-
-    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut pwbuf = [0u8; 1024];
-    let mut pwres: *mut libc::passwd = null_mut();
-    let Ok(user_c) = CString::new(user.as_str()) else {
-        return PAM_AUTH_ERR;
-    };
-    let rc = unsafe {
-        libc::getpwnam_r(user_c.as_ptr(), &mut pwd, pwbuf.as_mut_ptr().cast(), pwbuf.len(), &mut pwres)
-    };
-    if rc != 0 {
-        slog(libc::LOG_ERR, &format!("getpwnam_r({user}) failed"));
-        return PAM_TRY_AGAIN;
-    }
-    if pwres.is_null() {
-        slog(libc::LOG_WARNING, &format!("inexistant user {user}"));
-    }
-
-    let token = match unsafe { get_item_str(pamh, PAM_AUTHTOK) } {
+    let user = match pam.user() {
+        Ok(v) => v,
         Err(rc) => {
-            slog(libc::LOG_ERR, &format!("pam_get_item(PAM_AUTHTOK) failed: {}", pam_error(pamh, rc)));
+            slog(libc::LOG_ERR, &format!("pam_get_user() failed: {}", pam.strerror(rc)));
+            return if rc == PAM_SUCCESS { PAM_AUTH_ERR } else { rc };
+        }
+    };
+
+    match account_exists(&user) {
+        Ok(true) => {}
+        Ok(false) => slog(libc::LOG_WARNING, &format!("inexistant user {user}")),
+        Err(rc) => {
+            if rc == PAM_TRY_AGAIN {
+                slog(libc::LOG_ERR, &format!("getpwnam_r({user}) failed"));
+            }
+            return rc;
+        }
+    }
+
+    let token = match pam.item_str(PAM_AUTHTOK) {
+        Err(rc) => {
+            slog(
+                libc::LOG_ERR,
+                &format!("pam_get_item(PAM_AUTHTOK) failed: {}", pam.strerror(rc)),
+            );
             return rc;
         }
         Ok(Some(token)) => token,
         Ok(None) => {
-            let token = match unsafe { converse_for_token(pamh) } {
+            let token = match pam.converse_secret(c"Access Token: ") {
                 Ok(v) => v,
                 Err(rc) => return rc,
             };
-            if let Ok(token_c) = CString::new(token.as_str()) {
-                unsafe { pam_set_item(pamh, PAM_AUTHTOK, token_c.as_ptr().cast()) };
-            }
+            pam.set_authtok(&token);
             token
         }
     };
@@ -309,6 +181,14 @@ unsafe fn authenticate(
     PAM_SUCCESS
 }
 
+/// A panic must not unwind into libpam; report PAM_SYSTEM_ERR instead.
+fn guard(f: impl FnOnce() -> c_int) -> c_int {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| {
+        slog(libc::LOG_ERR, "pam_oauthbearer: internal panic");
+        PAM_SYSTEM_ERR
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pam_sm_authenticate(
     pamh: *mut pam_handle_t,
@@ -316,12 +196,13 @@ pub unsafe extern "C" fn pam_sm_authenticate(
     argc: c_int,
     argv: *const *const c_char,
 ) -> c_int {
-    catch_unwind(AssertUnwindSafe(|| unsafe { authenticate(pamh, argc, argv) })).unwrap_or_else(
-        |_| {
-            slog(libc::LOG_ERR, "pam_oauthbearer: internal panic");
-            PAM_SYSTEM_ERR
-        },
-    )
+    guard(|| {
+        let Some(pam) = (unsafe { PamHandle::from_raw(pamh) }) else {
+            return PAM_SYSTEM_ERR;
+        };
+        let args = unsafe { ffi::collect_args(argc, argv) };
+        authenticate(&pam, &args)
+    })
 }
 
 #[unsafe(no_mangle)]
