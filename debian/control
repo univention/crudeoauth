@@ -3,14 +3,22 @@ Section: libs
 Priority: optional
 Maintainer: Univention GmbH <packages@univention.de>
 Build-Depends:
- debhelper-compat (= 12),
+ cargo,
+ clang,
+ debhelper-compat (=13),
+ dh-cargo,
+ rustc,
+ librust-jsonwebtoken-dev,
+ librust-libc-dev,
+ librust-sasl2-sys-dev,
+ librust-serde-dev,
+ librust-serde-json-dev,
  dh-autoreconf,
  gawk,
  libglib2.0-0t64,
  libjansson-dev,
  liblasso3-dev,
  libpam0g-dev,
- librhonabwy-dev (>= 1.1.11),
  libsasl2-dev,
  libyder-dev,
 Standards-Version: 3.7.2
@@ -18,8 +26,6 @@ Standards-Version: 3.7.2
 Package: libsasl2-modules-oauthbearer
 Architecture: any
 Depends:
- libjansson4,
- librhonabwy1.1t64,
  libsasl2-2,
  ${misc:Depends},
  ${shlibs:Depends},
@@ -32,9 +38,7 @@ Description: SASL plugin for OAUTHBEARER (RFC 7628) authentication
 Package: libpam-oauthbearer
 Architecture: any
 Depends:
- libjansson4,
  libpam0g,
- librhonabwy1.1t64,
  libsasl2-2,
  ${misc:Depends},
  ${shlibs:Depends},

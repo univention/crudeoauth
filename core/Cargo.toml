@@ -1,0 +1,8 @@
+[package]
+name = "crudeoauth-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+jsonwebtoken.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "crudeoauth-pam"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "pam_oauthbearer"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+crudeoauth-core.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+jsonwebtoken.workspace = true
+serde_json.workspace = true

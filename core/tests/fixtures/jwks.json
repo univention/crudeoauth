@@ -1,0 +1,20 @@
+{
+ "keys": [
+  {
+   "kty": "RSA",
+   "kid": "enc-key-1",
+   "use": "enc",
+   "alg": "RSA-OAEP",
+   "n": "qGeh2qU6OEHXzIksWz6ufmxalquwACTA3_pEcQpe7MIh6k77X7rXxZLHkGvmedReCn4hiFqbtmJN05VXuGNlKk1KWF5EBKbso0VbANPug2YMrX-VQ2CFP89NY96aGf3sr2J04MXM5fK_fB_6uHgxWNdMH4F4gnl8Z-n2ySqJGFFCszBVwm4OaHGZR71iKT33_pcrRyQd7iP78iRKtwfD1OKcSpmCDcduc44WKVFaT4ITRfQj2N7Nhf5TNqJAFi3ZdUEIKwFtGeRid-TP5gRYDgQIJPYD4kFnCB9caiIsNYswdWKutbcQAHtLvDHxbxibRUo5Fkl7BZxLPDya8VZMsQ",
+   "e": "AQAB"
+  },
+  {
+   "kty": "RSA",
+   "kid": "test-key-1",
+   "use": "sig",
+   "alg": "RS256",
+   "n": "qGeh2qU6OEHXzIksWz6ufmxalquwACTA3_pEcQpe7MIh6k77X7rXxZLHkGvmedReCn4hiFqbtmJN05VXuGNlKk1KWF5EBKbso0VbANPug2YMrX-VQ2CFP89NY96aGf3sr2J04MXM5fK_fB_6uHgxWNdMH4F4gnl8Z-n2ySqJGFFCszBVwm4OaHGZR71iKT33_pcrRyQd7iP78iRKtwfD1OKcSpmCDcduc44WKVFaT4ITRfQj2N7Nhf5TNqJAFi3ZdUEIKwFtGeRid-TP5gRYDgQIJPYD4kFnCB9caiIsNYswdWKutbcQAHtLvDHxbxibRUo5Fkl7BZxLPDya8VZMsQ",
+   "e": "AQAB"
+  }
+ ]
+}

@@ -1,0 +1,67 @@
+Source: rust-sasl2-sys
+Section: rust
+Priority: optional
+Build-Depends: debhelper-compat (= 13),
+ dh-sequence-cargo
+Build-Depends-Arch: cargo:native <!nocheck>,
+ rustc:native <!nocheck>,
+ libstd-rust-dev <!nocheck>,
+ librust-cc-1+default-dev (>= 1.0.50-~~) <!nocheck>,
+ librust-duct-0.13+default-dev (>= 0.13.3-~~) <!nocheck>,
+ librust-libc-0.2+default-dev (>= 0.2.68-~~) <!nocheck>,
+ librust-pkg-config-0.3+default-dev (>= 0.3.17-~~) <!nocheck>,
+ libsasl2-dev <!nocheck>
+Maintainer: Debian Rust Maintainers <pkg-rust-maintainers@alioth-lists.debian.net>
+Standards-Version: 4.7.0
+Vcs-Git: https://salsa.debian.org/rust-team/debcargo-conf.git [src/sasl2-sys]
+Vcs-Browser: https://salsa.debian.org/rust-team/debcargo-conf/tree/master/src/sasl2-sys
+Homepage: https://github.com/MaterializeInc/rust-sasl
+X-Cargo-Crate: sasl2-sys
+Rules-Requires-Root: no
+
+Package: librust-sasl2-sys-dev
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${misc:Depends},
+ librust-cc-1+default-dev (>= 1.0.50-~~),
+ librust-duct-0.13+default-dev (>= 0.13.3-~~),
+ librust-libc-0.2+default-dev (>= 0.2.68-~~),
+ libsasl2-dev
+Recommends:
+ librust-sasl2-sys+pkg-config-dev (= ${binary:Version})
+Provides:
+ librust-sasl2-sys+plain-dev (= ${binary:Version}),
+ librust-sasl2-sys+vendored-dev (= ${binary:Version}),
+ librust-sasl2-sys-0-dev (= ${binary:Version}),
+ librust-sasl2-sys-0+plain-dev (= ${binary:Version}),
+ librust-sasl2-sys-0+vendored-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1+plain-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1+vendored-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1.22-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1.22+plain-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1.22+vendored-dev (= ${binary:Version})
+Description: Bindings for Cyrus SASL - Rust source code
+ Source code for Debianized Rust crate "sasl2-sys"
+
+Package: librust-sasl2-sys+pkg-config-dev
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${misc:Depends},
+ librust-sasl2-sys-dev (= ${binary:Version}),
+ librust-pkg-config-0.3+default-dev (>= 0.3.17-~~)
+Provides:
+ librust-sasl2-sys+default-dev (= ${binary:Version}),
+ librust-sasl2-sys-0+pkg-config-dev (= ${binary:Version}),
+ librust-sasl2-sys-0+default-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1+pkg-config-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1+default-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1.22+pkg-config-dev (= ${binary:Version}),
+ librust-sasl2-sys-0.1.22+default-dev (= ${binary:Version})
+Description: Bindings for Cyrus SASL - feature "pkg-config" and 1 more
+ This metapackage enables feature "pkg-config" for the Rust sasl2-sys crate, by
+ pulling in any additional dependencies needed by that feature.
+ .
+ Additionally, this package also provides the "default" feature.

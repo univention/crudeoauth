@@ -1,38 +1,44 @@
 #!/usr/bin/make -f
 #
-# Copyright 2022-2024 Univention GmbH
-#
-# http://www.univention.de/
-#
-# All rights reserved.
-#
-# The source code of this program is made available
-# under the terms of the GNU Affero General Public License version 3
-# (GNU AGPL V3) as published by the Free Software Foundation.
-#
-# Binary versions of this program provided by Univention to you as
-# well as other copyrighted, protected or trademarked materials like
-# Logos, graphics, fonts, specific documentations and configurations,
-# cryptographic keys etc. are subject to a license agreement between
-# you and Univention and not subject to the GNU AGPL V3.
-#
-# In the case you use this program under the terms of the GNU AGPL V3,
-# the program is provided in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public
-# License with the Debian GNU/Linux or Univention distribution in file
-# /usr/share/common-licenses/AGPL-3; if not, see
-# <http://www.gnu.org/licenses/>.
+# SPDX-FileCopyrightText: 2022-2026 Univention GmbH
+# SPDX-License-Identifier: AGPL-3.0-only
 
+export DH_VERBOSE = 1
 export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
-export DH_VERBOSE=1
 
-override_dh_auto_configure:
-	cd src && autoreconf --install --force
-	dh_auto_configure -- --with-pamlibdir=/lib/$(DEB_HOST_MULTIARCH)/security/
+# read /usr/share/perl5/Debian/Debhelper/Buildsystem/cargo.pm and /usr/share/cargo/bin/cargo !
+export CARGO_HOME=$(CURDIR)/debian/cargo_home
+export PATH := /usr/share/cargo/bin:$(PATH)
+
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/rustc/architecture.mk
+export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+export DEB_HOST_RUST_TYPE DEB_HOST_GNU_TYPE
+
+override_dh_auto_build:
+	cargo build --release --workspace
+
+override_dh_auto_test:
+	cargo test --release --workspace
+
+override_dh_auto_install:
+	# Cargo has no install mechanism for cdylib crates.
+	# Install the built shared objects explicitly; the artifact directory
+	# depends on whether cargo was invoked with an explicit --target.
+	set -e; \
+	sasl_so=$$(find target -path '*/release/liboauthbearer.so' | head -n1); \
+	pam_so=$$(find target -path '*/release/libpam_oauthbearer.so' | head -n1); \
+	install -d debian/libsasl2-modules-oauthbearer/usr/lib/$(DEB_HOST_MULTIARCH)/sasl2; \
+	install -m 0644 "$$sasl_so" debian/libsasl2-modules-oauthbearer/usr/lib/$(DEB_HOST_MULTIARCH)/sasl2/liboauthbearer.so; \
+	install -d debian/libpam-oauthbearer/usr/lib/$(DEB_HOST_MULTIARCH)/security; \
+	install -m 0644 "$$pam_so" debian/libpam-oauthbearer/usr/lib/$(DEB_HOST_MULTIARCH)/security/pam_oauthbearer.so
+
+	install -D -m 0644 sasl/sasl_oauthbearer.5 debian/tmp/usr/share/man/man5/sasl_oauthbearer.5
+	install -D -m 0644 pam/pam_oauthbearer.5 debian/tmp/usr/share/man/man5/pam_oauthbearer.5
+
+override_dh_auto_clean:
+	cargo clean || true
 
 %:
-	dh $@ --sourcedirectory=src
+	dh $@ --with cargo --buildsystem=cargo

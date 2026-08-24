@@ -1,0 +1,6 @@
+rust-sasl2-sys (0.1.22-1) unstable; urgency=medium
+
+  * Team upload.
+  * Package sasl2-sys 0.1.22+2.1.28 from crates.io using debcargo 2.7.8
+
+ -- Florian Best <best@univention.de>  Fri, 21 Aug 2026 10:04:50 +0200
