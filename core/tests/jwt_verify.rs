@@ -218,8 +218,8 @@ fn azp_checks() {
         ..policy()
     };
 
-    // Quirk preserved from C: a token without azp passes even with trusted_azp set.
-    assert!(verifier(azp_policy()).verify(&sign(&base_claims())).is_ok());
+    let err = verifier(azp_policy()).verify(&sign(&base_claims())).unwrap_err();
+    assert_eq!(err, OAuthError::InvalidAuthorizedParty { found: None });
 
     let mut claims = base_claims();
     claims["azp"] = json!("https://client.example.org/oidc/");
