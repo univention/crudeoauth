@@ -464,6 +464,17 @@ mod tests {
     }
 
     #[test]
+    fn empty_trusted_audience_configuration_is_rejected() {
+        let mut policy = test_policy();
+        policy.trusted_audiences.clear();
+
+        assert!(matches!(
+            JwtVerifier::from_jwks_json(policy, "{}"),
+            Err(OAuthError::ConfigError(message)) if message == "no trusted audiences configured"
+        ));
+    }
+
+    #[test]
     fn legacy_algorithm_policy_is_preserved() {
         let mut policy = test_policy();
         policy.disallowed_algorithms = vec![Algorithm::PS256];
