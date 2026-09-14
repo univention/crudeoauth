@@ -294,12 +294,12 @@ impl JwtVerifier {
     }
 
     fn check_authorized_party(&self, claims: &Value) -> Result<(), OAuthError> {
-        // Preserve the C semantics: azp is optional, and with no trusted_azp entries it is ignored.
+        // With trusted authorized parties configured, azp is required and must match.
         if self.policy.trusted_authorized_parties.is_empty() {
             return Ok(());
         }
         let Some(azp) = claims.get("azp") else {
-            return Ok(());
+            return Err(OAuthError::InvalidAuthorizedParty { found: None });
         };
         let Some(azp) = azp.as_str() else {
             return Err(OAuthError::InvalidAuthorizedParty { found: None });
