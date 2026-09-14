@@ -31,8 +31,8 @@ The verifier:
 -   verifies the JWT signature;
 -   checks the configured issuer and audience;
 -   optionally checks the authorized party (`azp`);
--   checks `nbf`, `iat`, and `exp` when present, with a configurable
-    clock-skew grace period;
+-   requires and checks `exp`, and checks `nbf` and `iat` when present, with a
+    configurable clock-skew grace period;
 -   optionally requires OAuth scopes;
 -   extracts the configured username claim;
 -   optionally rejects configured usernames, case-insensitively; and
