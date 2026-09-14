@@ -252,3 +252,14 @@ pub unsafe extern "C" fn pam_sm_chauthtok(
 ) -> c_int {
     PAM_SUCCESS
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_args;
+
+    #[test]
+    fn only_from_preserves_all_hosts() {
+        let args = parse_args(&["only_from=host-a,host-b".into()]).unwrap();
+        assert_eq!(args.only_from, vec!["host-a".to_owned(), "host-b".to_owned()]);
+    }
+}

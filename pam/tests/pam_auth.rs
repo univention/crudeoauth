@@ -14,6 +14,7 @@ use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde_json::json;
 
 const PAM_SUCCESS: c_int = 0;
+const PAM_IGNORE: c_int = 25;
 const PAM_AUTH_ERR: c_int = 7;
 const PAM_PROMPT_ECHO_OFF: c_int = 1;
 
@@ -93,13 +94,17 @@ fn module_path() -> PathBuf {
 }
 
 fn write_confdir(service: &str) -> PathBuf {
+    write_confdir_with_options(service, "")
+}
+
+fn write_confdir_with_options(service: &str, options: &str) -> PathBuf {
     let confdir = module_path().parent().unwrap().join("pam-test-confdir");
     std::fs::create_dir_all(&confdir).unwrap();
     let jwks = concat!(env!("CARGO_MANIFEST_DIR"), "/../core/tests/fixtures/jwks.json");
     std::fs::write(
         confdir.join(service),
         format!(
-            "auth required {} iss={ISSUER} jwks={jwks} trusted_aud={AUDIENCE}\n",
+            "auth required {} iss={ISSUER} jwks={jwks} trusted_aud={AUDIENCE} {options}\n",
             module_path().display()
         ),
     )
@@ -124,6 +129,20 @@ fn sign_token(username: &str) -> String {
 
 fn run_pam_auth(service: &str, pam_user: &str, token: &str) -> c_int {
     let confdir = write_confdir(service);
+    run_pam_auth_with_confdir(confdir, service, pam_user, token)
+}
+
+fn run_pam_auth_with_options(service: &str, pam_user: &str, token: &str, options: &str) -> c_int {
+    let confdir = write_confdir_with_options(service, options);
+    run_pam_auth_with_confdir(confdir, service, pam_user, token)
+}
+
+fn run_pam_auth_with_confdir(
+    confdir: PathBuf,
+    service: &str,
+    pam_user: &str,
+    token: &str,
+) -> c_int {
     let service_c = CString::new(service).unwrap();
     let user_c = CString::new(pam_user).unwrap();
     let confdir_c = CString::new(confdir.to_str().unwrap()).unwrap();
@@ -182,4 +201,13 @@ fn expired_token_is_rejected() {
     let key = EncodingKey::from_rsa_pem(include_bytes!("../../core/tests/fixtures/test_rsa.pem")).unwrap();
     let token = encode(&header, &claims, &key).unwrap();
     assert_eq!(run_pam_auth("crudeoauth-expired", "crudetest", &token), PAM_AUTH_ERR);
+}
+
+#[test]
+fn only_from_without_remote_host_is_safe() {
+    let token = sign_token("crudetest");
+    assert_eq!(
+        run_pam_auth_with_options("crudeoauth-only-from", "crudetest", &token, "only_from=host-a,host-b"),
+        PAM_IGNORE
+    );
 }
