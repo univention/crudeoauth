@@ -122,13 +122,20 @@ fn future_nbf_is_rejected() {
     assert_eq!(err, OAuthError::ClaimExpired);
 }
 
-// Documents a quirk inherited from the C implementation: exp is validated
-// only when present, so a token without exp never expires.
 #[test]
-fn missing_exp_is_currently_accepted() {
+fn missing_exp_is_rejected() {
     let mut claims = base_claims();
     claims.as_object_mut().unwrap().remove("exp");
-    assert!(verifier(policy()).verify(&sign(&claims)).is_ok());
+    let err = verifier(policy()).verify(&sign(&claims)).unwrap_err();
+    assert_eq!(err, OAuthError::MissingExpiration);
+}
+
+#[test]
+fn malformed_exp_is_rejected() {
+    let mut claims = base_claims();
+    claims["exp"] = json!("not-a-number");
+    let err = verifier(policy()).verify(&sign(&claims)).unwrap_err();
+    assert_eq!(err, OAuthError::MissingExpiration);
 }
 
 #[test]

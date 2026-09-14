@@ -36,6 +36,7 @@ pub enum OAuthError {
     InvalidAudience,
     MissingScope { scope: String },
     InvalidAuthorizedParty { found: Option<String> },
+    MissingExpiration,
     ClaimExpired,
     InvalidSignature,
     UnknownSigningKey { kid: Option<String> },
@@ -52,6 +53,7 @@ impl fmt::Display for OAuthError {
             Self::InvalidAudience => f.write_str("invalid or missing audience"),
             Self::MissingScope { scope } => write!(f, "required scope {scope:?} is missing"),
             Self::InvalidAuthorizedParty { found } => write!(f, "invalid authorized party: {found:?}"),
+            Self::MissingExpiration => f.write_str("token has no expiration claim"),
             Self::ClaimExpired => f.write_str("token is expired or not yet valid"),
             Self::InvalidSignature => f.write_str("JWT signature is invalid"),
             Self::UnknownSigningKey { kid } => write!(f, "JWT signing key is unknown: {kid:?}"),
@@ -315,13 +317,15 @@ impl JwtVerifier {
             .as_secs() as i64;
         let grace = self.policy.grace.max(0);
 
+        let Some(exp) = numeric_date(claims.get("exp"))? else {
+            return Err(OAuthError::MissingExpiration);
+        };
         let nbf = numeric_date(claims.get("nbf"))?;
         let iat = numeric_date(claims.get("iat"))?;
-        let exp = numeric_date(claims.get("exp"))?;
 
-        if nbf.is_some_and(|v| v > now.saturating_add(grace))
+        if exp < now.saturating_sub(grace)
+            || nbf.is_some_and(|v| v > now.saturating_add(grace))
             || iat.is_some_and(|v| v > now.saturating_add(grace))
-            || exp.is_some_and(|v| v < now.saturating_sub(grace))
         {
             return Err(OAuthError::ClaimExpired);
         }
