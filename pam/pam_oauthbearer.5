@@ -18,6 +18,19 @@ JWKS entries that are not usable for signature verification, such as encryption 
 .SH OPTIONS
 Options that may occur multiple times can be specified repeatedly.
 .TP
+.B config=\fIPATH\fR
+Read the PAM module configuration from a Cyrus SASL-style configuration
+file instead of inline PAM options. The file uses
+.B key: value
+entries, for example
+.B oauthbearer_trusted_aud0: ldaps://example.org/ .
+The supported
+.B oauthbearer_*
+options correspond to the options documented in
+.BR sasl_oauthbearer (5).
+The file must be a regular file and must not be writable by its group or
+by other users. Do not combine this option with inline module options.
+.TP
 .B grace=\fIN\fR
 Permits \fIN\fR seconds of clock skew when checking
 .BR nbf ,

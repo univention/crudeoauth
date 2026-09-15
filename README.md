@@ -186,6 +186,17 @@ The corresponding PAM options are `grace`, `userid`, `iss`, `jwks`,
 `disallowed_alg`, and `disallowed_username`. Repeat options that accept
 multiple values.
 
+To reuse the same policy as the SASL plugin, PAM can load a Cyrus
+SASL-style configuration file instead:
+
+``` text
+auth sufficient pam_oauthbearer.so config=/etc/ldap/sasl2/slapd.conf
+```
+
+The file uses `key: value` entries such as `oauthbearer_trusted_aud0`.
+It must be a regular file without group- or other-write permission, and
+`config=` cannot be combined with inline module options.
+
 See `pam_oauthbearer(5)` and `sasl_oauthbearer(5)` for details.
 
 ## Security considerations
