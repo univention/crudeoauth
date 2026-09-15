@@ -95,11 +95,7 @@ pub(crate) unsafe fn collect_args(argc: c_int, argv: *const *const c_char) -> Ve
 
 /// Whether a local account with this name exists. `Err(rc)` carries the PAM
 /// return code for a lookup failure.
-pub(crate) fn account_exists(user: &str) -> Result<bool, c_int> {
-    let user = match CString::new(user) {
-        Ok(user) => user,
-        Err(_) => return Err(PAM_AUTH_ERR),
-    };
+pub(crate) fn account_exists(user: &CStr) -> Result<bool, c_int> {
     let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
     let mut buf = [0u8; 1024];
     let mut result: *mut libc::passwd = null_mut();
@@ -137,13 +133,13 @@ impl<'a> PamHandle<'a> {
 
     /// The (possibly conversation-prompted) target user. `Err` carries the
     /// libpam return code; PAM_SUCCESS in it means a NULL user was returned.
-    pub(crate) fn user(&self) -> Result<String, c_int> {
+    pub(crate) fn user(&self) -> Result<CString, c_int> {
         let mut user: *const c_char = null();
         let rc = unsafe { pam_get_user(self.raw, &mut user, null()) };
         if rc != PAM_SUCCESS || user.is_null() {
             return Err(rc);
         }
-        Ok(unsafe { CStr::from_ptr(user) }.to_string_lossy().into_owned())
+        Ok(unsafe { CStr::from_ptr(user) }.to_owned())
     }
 
     pub(crate) fn item_str(&self, item_type: c_int) -> Result<Option<String>, c_int> {
@@ -159,15 +155,13 @@ impl<'a> PamHandle<'a> {
     }
 
     /// Store the token as PAM_AUTHTOK for later stack modules (best effort).
-    pub(crate) fn set_authtok(&self, value: &str) {
-        if let Ok(value) = CString::new(value) {
-            unsafe { pam_set_item(self.raw, PAM_AUTHTOK, value.as_ptr().cast()) };
-        }
+    pub(crate) fn set_authtok(&self, value: &CStr) {
+        unsafe { pam_set_item(self.raw, PAM_AUTHTOK, value.as_ptr().cast()) };
     }
 
     /// Ask the application for a secret via the conversation (echo off). The
     /// response buffer is zeroized and freed as the PAM contract requires.
-    pub(crate) fn converse_secret(&self, prompt: &CStr) -> Result<String, c_int> {
+    pub(crate) fn converse_secret(&self, prompt: &CStr) -> Result<CString, c_int> {
         let mut convptr: *const c_void = null();
         let rc = unsafe { pam_get_item(self.raw, PAM_CONV, &mut convptr) };
         if rc != PAM_SUCCESS {
@@ -198,7 +192,7 @@ impl<'a> PamHandle<'a> {
         let secret = if answer.is_null() {
             None
         } else {
-            let secret = unsafe { CStr::from_ptr(answer) }.to_string_lossy().into_owned();
+            let secret = unsafe { CStr::from_ptr(answer) }.to_owned();
             unsafe {
                 libc::memset(answer.cast(), 0, libc::strlen(answer));
                 libc::free(answer.cast());

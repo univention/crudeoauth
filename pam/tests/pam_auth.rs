@@ -144,6 +144,10 @@ fn run_pam_auth_with_confdir(
     pam_user: &str,
     token: &str,
 ) -> c_int {
+    run_pam_auth_raw_user(confdir, service, pam_user.as_bytes(), token)
+}
+
+fn run_pam_auth_raw_user(confdir: PathBuf, service: &str, pam_user: &[u8], token: &str) -> c_int {
     let service_c = CString::new(service).unwrap();
     let user_c = CString::new(pam_user).unwrap();
     let confdir_c = CString::new(confdir.to_str().unwrap()).unwrap();
@@ -213,5 +217,14 @@ fn only_from_without_remote_host_is_safe() {
         &token,
         "only_from=host-a,host-b",
     );
+    assert_ne!(rc, PAM_SUCCESS);
+}
+
+#[test]
+fn non_utf8_user_does_not_match_replacement_characters() {
+    let confdir = write_confdir("crudeoauth-non-utf8-user");
+    let token = sign_token("crudetest\u{FFFD}");
+    let rc = run_pam_auth_raw_user(confdir, "crudeoauth-non-utf8-user", b"crudetest\xff", &token);
+    // Some NSS backends fail the account lookup (PAM_TRY_AGAIN) before the comparison.
     assert_ne!(rc, PAM_SUCCESS);
 }

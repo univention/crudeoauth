@@ -4,5 +4,6 @@
 //! Shared OAUTHBEARER logic: JWT validation policy and RFC 7628 message
 //! framing. Pure safe Rust; the SASL and PAM FFI live in their own crates.
 
+pub mod config;
 pub mod jwt;
 pub mod rfc7628;
