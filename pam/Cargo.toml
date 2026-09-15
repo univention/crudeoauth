@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 crudeoauth-core.workspace = true
+jsonwebtoken.workspace = true
 libc.workspace = true
 once_cell.workspace = true
 

@@ -9,6 +9,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 crudeoauth-core.workspace = true
-jsonwebtoken.workspace = true
 sasl2-sys.workspace = true
 libc.workspace = true
