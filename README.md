@@ -22,6 +22,11 @@ The artifacts can be used:
 In UCS, for example, a user-facing service can be the Univention
 Management Console and the protected resource can be OpenLDAP `slapd`.
 
+## Naming
+
+The name **CrudeOAuth** is an homage to [CrudeSAML](https://ftp.espci.fr/pub/crudesaml/),
+whose approach to SAML authentication inspired this project.
+
 ## Token validation
 
 The verifier:
