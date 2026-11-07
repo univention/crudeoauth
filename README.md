@@ -238,3 +238,111 @@ The verifier performs the application policy checks itself rather than
 relying on `jsonwebtoken` to decide issuer, audience, time, scope,
 authorized-party, algorithm, or username policy. This keeps the
 authentication errors and policy behavior under `crudeoauth` control.
+
+## Troubleshooting SASL
+
+### Client reports "No worthy mechs found"
+
+The following error typically indicates that no suitable SASL client mechanism is available:
+
+```text
+SASL(-4): no mechanism available: No worthy mechs found
+```
+
+CrudeOAuth provides both server-side and client-side SASL plugins. To authenticate using OAUTHBEARER, the plugin must also be installed and discoverable on the **client**.
+
+Check available client mechanisms:
+
+```sh
+saslpluginviewer -c
+```
+
+If `OAUTHBEARER` is missing, verify that `liboauthbearer.so` is installed in the client's SASL plugin directory and that `SASL_PATH` is set before the client process initializes Cyrus SASL.
+
+For example:
+
+```sh
+SASL_PATH=/path/to/plugins:/usr/lib/x86_64-linux-gnu/sasl2 \
+    ldapwhoami -H ldaps://ldap.example.org -Y OAUTHBEARER -y /tmp/your-access-token.jwt
+```
+
+If `OAUTHBEARER` is available locally but authentication still fails, check the server's advertised mechanisms, TLS requirements, and client-side SASL security properties.
+
+### OAUTHBEARER is not advertised by the server
+
+If `OAUTHBEARER` is missing from the server's `supportedSASLMechanisms` attribute, the SASL plugin may have failed to initialize.
+
+For OpenLDAP, check the Root DSE:
+
+```sh
+ldapsearch -LLL -x -H ldap://localhost:389 -s base -b "" supportedSASLMechanisms
+```
+
+If `OAUTHBEARER` is missing, check the following:
+
+1. **Configuration indices must start at `0` and be consecutive.**
+
+   Each numbered configuration option uses its own sequence of indices, starting at `0`, without gaps.
+
+   For example, this is **incorrect**:
+
+   ```ini
+   oauthbearer_trusted_jwks0: /etc/ldap/jwks.json
+   oauthbearer_trusted_iss0: https://sso.example.org/
+   oauthbearer_trusted_aud1: ldaps://ldap.example.org/
+   ```
+
+   The `trusted_aud` sequence starts at `1` instead of `0`. As a result, no trusted audience is configured, and plugin initialization fails.
+
+   The correct configuration is:
+
+   ```ini
+   oauthbearer_trusted_jwks0: /etc/ldap/jwks.json
+   oauthbearer_trusted_iss0: https://sso.example.org/
+   oauthbearer_trusted_aud0: ldaps://ldap.example.org/
+   ```
+
+   **Important:** A configuration error can prevent the plugin from being registered without producing an obvious error in the OpenLDAP logs.
+   The mechanism will simply be absent from `supportedSASLMechanisms`.
+
+2. **Verify the plugin search path.**
+
+   Cyrus SASL loads mechanism plugins from its configured plugin directory, which depends on the distribution and build configuration.
+
+   On Debian, this is typically:
+
+   ```text
+   /usr/lib/x86_64-linux-gnu/sasl2/
+   ```
+
+   The path can be overridden using `SASL_PATH`:
+
+   ```sh
+   export SASL_PATH=/path/to/plugins:/usr/lib/x86_64-linux-gnu/sasl2
+   ```
+
+   Ensure that `liboauthbearer.so` exists in one of these directories and that all its shared-library dependencies are available:
+
+   ```sh
+   ldd /path/to/liboauthbearer.so
+   ```
+
+3. **Verify the SASL configuration file.**
+
+   Cyrus SASL uses application-specific configuration files, such as `/etc/ldap/sasl2/slapd.conf` for OpenLDAP on Debian.
+
+   The configuration directory can be overridden using `SASL_CONF_PATH`.
+
+   Check that the JWKS file is accessible to the server process, contains a suitable signing key, and that all required configuration options are present.
+
+### Debugging plugin initialization
+
+The `saslpluginviewer` utility (provided by Debian's `sasl2-bin` package) can be used to inspect available SASL mechanisms independently of OpenLDAP.
+
+```sh
+cp /etc/ldap/sasl2/slapd.conf /etc/ldap/sasl2/pluginviewer.conf
+SASL_PATH=/usr/lib/x86_64-linux-gnu/sasl2 SASL_CONF_PATH=/etc/ldap/sasl2 saslpluginviewer -s
+```
+
+**Note:** `saslpluginviewer` uses its own application name for Cyrus SASL configuration. It does not read `slapd.conf` automatically.
+To test with the same configuration as OpenLDAP, copy `slapd.conf` to `pluginviewer.conf` in the SASL configuration directory:
